@@ -1,8 +1,8 @@
 #include <LiquidCrystal.h>
 #include <Stepper.h>
-#include <dht.h>  //humidity and temp library
-// #include <RTClib.h>//clock library
-// #include <DS3231.h>//other clock library
+#include <dht.h>     //humidity and temp library
+#include <RTClib.h>  //clock library
+
 
 
 //definitions
@@ -19,8 +19,14 @@ Stepper myStepper = Stepper(stepsPerRevolution, 8, 10, 9, 11);
 #define MOTOR_PIN 6
 //humidity and temp sensor
 dht DHT;
+#define TEMP_THRESHOLD 26
+#define WATER_THRESHOLD 900
 #define DHT11_PIN 7
-
+//LED pins
+#define RED_LED 3
+#define YELLOW_LED 4
+#define GREEN_LED 5
+#define BLUE_LED 6
 
 
 volatile unsigned char* port_b = (unsigned char*)0x25;
@@ -60,15 +66,27 @@ volatile unsigned char* myTIFR1 = (unsigned char*)0x36;
 const int RS = 31, EN = 33, D4 = 35, D5 = 37, D6 = 39, D7 = 41;
 LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
 
-
+//posible states
+enum states { START,
+              DISABLED,
+              IDLE,
+              ERROR,
+              RUNNING };
 void setup() {
+  // Serial.begin(9600);
+  adc_init();
   // Serial.begin(9600);
   setPortOutput(ddr_b, 7);
   lcd.begin(16, 2);
 }
 
 void loop() {
-  updateLCD();
+  // updateLCD();
+  adc_init();
+  int waterLevel = getWaterLevel();
+  // Serial.print("\n");
+  // Serial.println(waterLevel);
+  // delay(1000);
   //  WRITE_LOW_P(port_b, 7);
   //  delay(100);
   //  WRITE_HIGH_P(port_b,7);
@@ -76,10 +94,11 @@ void loop() {
 }
 void updateLCD() {
   int chk = DHT.read11(DHT11_PIN);
+  float f = (DHT.temperature * (9 / 5)) + 32;
   lcd.setCursor(0, 0);
   lcd.print("Temp = ");
-  lcd.print(DHT.temperature);
-  lcd.print(" C");
+  lcd.print(f);
+  lcd.print(" F");
   Serial.println(DHT.temperature);
   lcd.setCursor(0, 1);
   lcd.print("Humidity = ");
@@ -99,7 +118,27 @@ void setPortInput(volatile unsigned char* ddr, unsigned char pin_num) {
   *ddr &= ~(0x01 << pin_num);
 }
 
-
+void U0init(int U0baud) {
+  unsigned long FCPU = 16000000;
+  unsigned int tbaud;
+  tbaud = (FCPU / 16 / U0baud - 1);
+  // Same as (FCPU / (16 * U0baud)) - 1;
+  *myUCSR0A = 0x20;
+  *myUCSR0B = 0x18;
+  *myUCSR0C = 0x06;
+  *myUBRR0 = tbaud;
+}
+unsigned char U0kbhit() {
+  return *myUCSR0A & RDA;
+}
+unsigned char U0getchar() {
+  return *myUDR0;
+}
+void U0putchar(unsigned char U0pdata) {
+  while ((*myUCSR0A & TBE) == 0)
+    ;
+  *myUDR0 = U0pdata;
+}
 void adc_init() {
   // setup the A register
   *my_ADCSRA |= 0b10000000;  // set bit   7 to 1 to enable the ADC
@@ -162,4 +201,43 @@ void configTimer(unsigned int freq) {
   *myTCCR1B &= 0xF8;  // 0b 0000 0000
   // reset TOV
   *myTIFR1 |= 0x01;
+}
+int getWaterLevel() {
+  unsigned char channel = 0;
+  unsigned int value_b;
+
+  value_b = adc_read(channel);
+  int thousand, hundred, ten, one;
+  thousand = (value_b / 1000) % 10 + '0';
+  hundred = (value_b / 100) % 10 + '0';
+  ten = (value_b / 10) % 10 + '0';
+  one = (value_b / 1) % 10 + '0';
+  // U0putchar(thousand);
+  // U0putchar(hundred);
+  // U0putchar(ten);
+  // U0putchar(one);
+  // U0putchar("\n");
+  return ((thousand - 48) * 1000) + ((hundred - 48) * 100) + ((ten - 48) * 10) + (one - 48);
+}
+void DisabledState() {
+}
+
+void IdleState() {
+}
+
+void RunningState() {
+}
+
+void ErrorState() {
+}
+
+
+
+// turn fan motor on or off
+void setFanMotor(bool on) {
+  if (on) {
+    WRITE_HIGH_P(port_h, MOTOR_PIN);
+  } else {
+    WRITE_LOW_P(port_h, MOTOR_PIN);
+  }
 }
