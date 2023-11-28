@@ -3,7 +3,7 @@
 #include <dht.h>     //humidity and temp library
 #include <RTClib.h>  //clock library
 
-
+//lkl
 
 //definitions
 #define RDA 0x80
