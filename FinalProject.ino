@@ -84,6 +84,25 @@ void loop() {
   // updateLCD();
   adc_init();
   int waterLevel = getWaterLevel();
+  switch (states)
+  {
+  case START:
+    /* code */
+    updateLCD();
+     break;
+  case DISABLED:
+     break;
+  case IDLE:
+     updateLCD();
+     break;
+  case ERROR:
+     break;
+  case RUNNING:
+     updateLCD();
+     break;
+  default:
+    break;
+  }
   // Serial.print("\n");
   // Serial.println(waterLevel);
   // delay(1000);
@@ -239,5 +258,14 @@ void setFanMotor(bool on) {
     WRITE_HIGH_P(port_h, MOTOR_PIN);
   } else {
     WRITE_LOW_P(port_h, MOTOR_PIN);
+  }
+}
+
+void moveVent(bool ccw){
+  myStepper.setSpeed(5);
+  if(ccw){
+    myStepper.step(-stepsPerRevolution);
+  }else{
+    myStepper.step(stepsPerRevolution);
   }
 }
