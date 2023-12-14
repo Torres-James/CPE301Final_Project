@@ -1,11 +1,13 @@
 #include <LiquidCrystal.h>
 #include <Stepper.h>
-// #include <dht.h>    //humidity and temp library
+#include <dht.h>    //humidity and temp library
 #include <RTClib.h> //clock library
 
-// lklfasd
+// RTC
+RTC_DS1307 rtc;
 
-// definitions fasdf 
+char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+// definitions
 #define RDA 0x80
 #define TBE 0x20
 // stepper motor
@@ -20,7 +22,7 @@ Stepper myStepper = Stepper(stepsPerRevolution, 8, 10, 9, 11);
 #define DIR1  5// pin 4 pg5
 #define DIR2 3// pin 5 pe3
 // humidity and temp sensor
-// dht DHT;
+dht DHT;
 #define TEMP_THRESHOLD 26
 #define WATER_THRESHOLD 900
 #define DHT11_PIN 7
@@ -63,11 +65,13 @@ volatile unsigned char *my_ADCSRB = (unsigned char *)0x7B;
 volatile unsigned char *my_ADCSRA = (unsigned char *)0x7A;
 volatile unsigned int *my_ADC_DATA = (unsigned int *)0x78;
 volatile unsigned char *portADCDataRegisterHigh = (unsigned char *)0x79;
+
 volatile unsigned char *myUCSR0A = (unsigned char *)0x00C0;
 volatile unsigned char *myUCSR0B = (unsigned char *)0x00C1;
 volatile unsigned char *myUCSR0C = (unsigned char *)0x00C2;
 volatile unsigned int *myUBRR0 = (unsigned int *)0x00C4;
 volatile unsigned char *myUDR0 = (unsigned char *)0x00C6;
+
 volatile unsigned char *myTCCR1A = (unsigned char *)0x80;
 volatile unsigned char *myTCCR1B = (unsigned char *)0x81;
 volatile unsigned char *myTCCR1C = (unsigned char *)0x82;
@@ -91,9 +95,11 @@ enum states
 };
 void setup()
 {
-  // Serial.begin(9600);
+  //RTC stuff
+  U0init(9600);
+  rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+
   adc_init();
-  // Serial.begin(9600);
   setPortOutput(ddr_h, SPEED_PIN);
   setPortOutput(ddr_g, DIR1);
   setPortOutput(ddr_e, DIR2);
@@ -107,7 +113,12 @@ void setup()
 
 void loop()
 {
+DateTime now = rtc.now();
   // updateLCD();
+    // while (U0kbhit()==0){}; // wait for RDA = true
+
+    printDate(now);
+    U0putchar('G');
   adc_init();
   // digitalWrite(4, HIGH);
   // digitalWrite(5, LOW);
@@ -142,19 +153,34 @@ void loop()
   //  WRITE_HIGH_P(port_b,7);
   //  delay(100);
 }
-// void updateLCD()
-// {
-//   int chk = DHT.read11(DHT11_PIN);
-//   float f = (DHT.temperature * (9 / 5)) + 32;
-//   lcd.setCursor(0, 0);
-//   lcd.print("Temp = ");
-//   lcd.print(f);
-//   lcd.print(" F");
-//   Serial.println(DHT.temperature);
-//   lcd.setCursor(0, 1);
-//   lcd.print("Humidity = ");
-//   lcd.print(DHT.humidity);
-// }
+void updateLCD()
+{
+  int chk = DHT.read11(DHT11_PIN);
+  float f = (DHT.temperature * (9 / 5)) + 32;
+  lcd.setCursor(0, 0);
+  lcd.print("Temp = ");
+  lcd.print(f);
+  lcd.print(" F");
+  Serial.println(DHT.temperature);
+  lcd.setCursor(0, 1);
+  lcd.print("Humidity = ");
+  lcd.print(DHT.humidity);
+}
+void printDate(DateTime now){
+    
+  String year, day, month, hour, minute, seconds, FinalDate;
+  year = String(now.year());
+  month = String(now.month());
+  day = String(now.day());
+  hour = String(now.hour());
+  minute = String(now.minute());
+  seconds = String(now.second());
+  FinalDate = month + "-" + day + "-" + year + " " + hour + ":" + minute + ":" + seconds;
+  for(int i = 0; i < year.length(); i ++){
+    U0putchar(year[i]);
+  }
+  U0putchar('\n');
+}
 void WRITE_LOW_P(volatile unsigned char *port, unsigned char pin_num)
 {
   *port &= ~(0x01 << pin_num);
@@ -226,16 +252,18 @@ void U0init(int U0baud)
 }
 unsigned char U0kbhit()
 {
-  return *myUCSR0A & RDA;
+  return (RDA & *myUCSR0A);
 }
 unsigned char U0getchar()
 {
-  return *myUDR0;
+  unsigned char ch;
+  while (!(*myUCSR0A & (1 << RXC0)));
+  ch = *myUDR0;
+  return ch;
 }
 void U0putchar(unsigned char U0pdata)
 {
-  while ((*myUCSR0A & TBE) == 0)
-    ;
+  while ((TBE & *myUCSR0A) == 0);
   *myUDR0 = U0pdata;
 }
 void adc_init()
@@ -316,11 +344,6 @@ int getWaterLevel()
   hundred = (value_b / 100) % 10 + '0';
   ten = (value_b / 10) % 10 + '0';
   one = (value_b / 1) % 10 + '0';
-  // U0putchar(thousand);
-  // U0putchar(hundred);
-  // U0putchar(ten);
-  // U0putchar(one);
-  // U0putchar("\n");
   return ((thousand - 48) * 1000) + ((hundred - 48) * 100) + ((ten - 48) * 10) + (one - 48);
 }
 void DisabledState()
