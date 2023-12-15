@@ -6,7 +6,7 @@
 // RTC
 RTC_DS1307 rtc;
 
-char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+const byte interruptPin = 2;
 // definitions
 #define RDA 0x80
 #define TBE 0x20
@@ -19,8 +19,8 @@ const int stepsPerRevolution = 2038;
 Stepper myStepper = Stepper(stepsPerRevolution, 8, 10, 9, 11);
 // fan motor
 #define SPEED_PIN 3 // pin 6 ph3
-#define DIR1  5// pin 4 pg5
-#define DIR2 3// pin 5 pe3
+#define DIR1 5      // pin 4 pg5
+#define DIR2 3      // pin 5 pe3
 // humidity and temp sensor
 dht DHT;
 #define TEMP_THRESHOLD 26
@@ -38,7 +38,7 @@ enum LEDS
   GREEN,
   BLUE
 };
-
+#pragma region
 volatile unsigned char *port_g = (unsigned char *)0x34;
 volatile unsigned char *ddr_g = (unsigned char *)0x33;
 volatile unsigned char *pin_g = (unsigned char *)0x32;
@@ -79,13 +79,14 @@ volatile unsigned char *myTIMSK1 = (unsigned char *)0x6F;
 volatile unsigned int *myTCNT1 = (unsigned int *)0x84;
 volatile unsigned char *myTIFR1 = (unsigned char *)0x36;
 
+#pragma endregion
 // rtc clock
 // RTC_DS1307 RTC;
 const int RS = 31, EN = 33, D4 = 35, D5 = 37, D6 = 39, D7 = 41;
 LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
 
 // posible states
-enum states
+enum States
 {
   START,
   DISABLED,
@@ -95,7 +96,10 @@ enum states
 };
 void setup()
 {
-  //RTC stuff
+  *ddr_k &= 0xEF; //pin A12 stop to input
+  *ddr_k &= 0xF7; //pin A11 reset to input
+  rtc.begin();
+  // RTC stuff
   U0init(9600);
   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 
@@ -103,71 +107,87 @@ void setup()
   setPortOutput(ddr_h, SPEED_PIN);
   setPortOutput(ddr_g, DIR1);
   setPortOutput(ddr_e, DIR2);
-  
+
   setPortOutput(ddr_l, 2);
   setPortOutput(ddr_l, 0);
   setPortOutput(ddr_b, 2);
   setPortOutput(ddr_b, 0);
   lcd.begin(16, 2);
+  attachInterrupt(digitalPinToInterrupt(interruptPin), stateMachine, RISING);
 }
-
+States states = IDLE;
 void loop()
 {
-DateTime now = rtc.now();
-  // updateLCD();
-    // while (U0kbhit()==0){}; // wait for RDA = true
+  int chk1 = DHT.read11(DHT11_PIN);
+  DateTime now = rtc.now();
 
-    printDate(now);
-    U0putchar('G');
   adc_init();
-  // digitalWrite(4, HIGH);
-  // digitalWrite(5, LOW);
-
-  setFanMotor(false);
-
-  // int waterLevel = getWaterLevel();
-  // switch (states)
-  // {
-  // case START:
-  //   /* code */
-  //   updateLCD();
-  //   break;
-  // case DISABLED:
-  //   break;
-  // case IDLE:
-  //   updateLCD();
-  //   break;
-  // case ERROR:
-  //   break;
-  // case RUNNING:
-  //   updateLCD();
-  //   break;
-  // default:
-  //   break;
-  // }
-  // Serial.print("\n");
-  // Serial.println(waterLevel);
-  // delay(1000);
-  //  WRITE_LOW_P(port_b, 7);
-  //  delay(100);
-  //  WRITE_HIGH_P(port_b,7);
-  //  delay(100);
+  if (*pin_k & 0xEF){
+    states = DISABLED;
+  }
+  if (states != DISABLED)
+  {
+    int waterLevel = getWaterLevel();
+    if (waterLevel <= WATER_THRESHOLD)
+    {
+      states = ERROR;
+    }
+    else if (DHT.temperature <= TEMP_THRESHOLD)
+    {
+      states = IDLE;
+    }
+    else
+    {
+      states = RUNNING;
+    }
+    switch (states)
+    {
+    case START:
+      states = RUNNING;
+      break;
+    case DISABLED:
+      DisabledState();
+      break;
+    case IDLE:
+      IdleState(now);
+      break;
+    case ERROR:
+      ErrorState();
+      if(*pin_k & 0xF7){
+        states = IDLE;
+      }
+      break;
+    case RUNNING:
+      RunningState();
+      break;
+    default:
+      break;
+    }
+  }
+}
+void stateMachine()
+{
+  if (states == DISABLED)
+  {
+    states == START;
+  }
 }
 void updateLCD()
 {
+  lcd.clear();
   int chk = DHT.read11(DHT11_PIN);
-  float f = (DHT.temperature * (9 / 5)) + 32;
+  float f = DHT.temperature;
   lcd.setCursor(0, 0);
   lcd.print("Temp = ");
   lcd.print(f);
-  lcd.print(" F");
-  Serial.println(DHT.temperature);
+  lcd.print(" C");
   lcd.setCursor(0, 1);
   lcd.print("Humidity = ");
   lcd.print(DHT.humidity);
 }
-void printDate(DateTime now){
-    
+void printDate(DateTime now)
+{
+
   String year, day, month, hour, minute, seconds, FinalDate;
   year = String(now.year());
   month = String(now.month());
@@ -176,8 +196,9 @@ void printDate(DateTime now){
   minute = String(now.minute());
   seconds = String(now.second());
   FinalDate = month + "-" + day + "-" + year + " " + hour + ":" + minute + ":" + seconds;
-  for(int i = 0; i < year.length(); i ++){
-    U0putchar(year[i]);
+  for (int i = 0; i < FinalDate.length(); i++)
+  {
+    U0putchar(FinalDate[i]);
   }
   U0putchar('\n');
 }
@@ -209,12 +230,12 @@ void turnOnLed(LEDS ledColor)
     WRITE_HIGH_P(port_l, YELLOW_LED);
     break;
   case 2:
-      WRITE_HIGH_P(port_b, GREEN_LED);
-      break;
+    WRITE_HIGH_P(port_b, GREEN_LED);
+    break;
   case 3:
-      WRITE_HIGH_P(port_b, BLUE_LED);
-  break;
-      default:
+    WRITE_HIGH_P(port_b, BLUE_LED);
+    break;
+  default:
     break;
   }
 }
@@ -230,12 +251,12 @@ void turnOffLed(LEDS ledColor)
     WRITE_LOW_P(port_l, 0);
     break;
   case 2:
-      WRITE_LOW_P(port_b, 2);
-      break;
+    WRITE_LOW_P(port_b, 2);
+    break;
   case 3:
-      WRITE_LOW_P(port_b, 0);
-  break;
-      default:
+    WRITE_LOW_P(port_b, 0);
+    break;
+  default:
     break;
   }
 }
@@ -257,13 +278,15 @@ unsigned char U0kbhit()
 unsigned char U0getchar()
 {
   unsigned char ch;
-  while (!(*myUCSR0A & (1 << RXC0)));
+  while (!(*myUCSR0A & (1 << RXC0)))
+    ;
   ch = *myUDR0;
   return ch;
 }
 void U0putchar(unsigned char U0pdata)
 {
-  while ((TBE & *myUCSR0A) == 0);
+  while ((TBE & *myUCSR0A) == 0)
+    ;
   *myUDR0 = U0pdata;
 }
 void adc_init()
@@ -348,18 +371,47 @@ int getWaterLevel()
 }
 void DisabledState()
 {
+  setFanMotor(false);
+  turnOnLed(YELLOW);
+  turnOffLed(BLUE);
+  turnOffLed(RED);
+  turnOffLed(GREEN);
+  moveVent(true);
 }
 
-void IdleState()
+void IdleState(DateTime now)
 {
+  printDate(now);
+  updateLCD();
+  setFanMotor(false);
+  turnOnLed(GREEN);
+  turnOffLed(BLUE);
+  turnOffLed(RED);
+  turnOffLed(YELLOW);
+  moveVent(false);
 }
 
 void RunningState()
 {
+  updateLCD();
+
+  setFanMotor(true);
+  turnOnLed(BLUE);
+  turnOffLed(YELLOW);
+  turnOffLed(RED);
+  turnOffLed(GREEN);
+  moveVent(true);
 }
 
 void ErrorState()
 {
+  setFanMotor(false);
+  lcd.clear();
+  lcd.print("ERROR: water level low");
+  turnOnLed(RED);
+  turnOffLed(BLUE);
+  turnOffLed(YELLOW);
+  turnOffLed(GREEN);
 }
 
 // turn fan motor on or off
@@ -368,19 +420,19 @@ void setFanMotor(bool on)
 
   if (on)
   {
-  *port_g |= (0x01 << DIR1);
-  *port_g &= ~(0x01 << DIR2);
+    *port_g |= (0x01 << DIR1);
+    *port_g &= ~(0x01 << DIR2);
   }
   else
   {
-  *port_g &= ~(0x01 << DIR1);
-  *port_g &= ~(0x01 << DIR2);
+    *port_g &= ~(0x01 << DIR1);
+    *port_g &= ~(0x01 << DIR2);
   }
 }
 
 void moveVent(bool ccw)
 {
-  myStepper.setSpeed(5);
+  myStepper.setSpeed(10);
   if (ccw)
   {
     myStepper.step(-stepsPerRevolution);
