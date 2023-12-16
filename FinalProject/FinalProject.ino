@@ -93,7 +93,7 @@ enum States
 };
 void setup()
 {
-  Serial.begin(9600);
+
   *ddr_b &= 0b01111111; //pin 13 pb7 stop to input
   *ddr_b &= 0b10111111; //pin 12 pb6 reset to input
   rtc.begin();
@@ -108,7 +108,6 @@ void setup()
   setPortOutput(ddr_h, SPEED_PIN);
   setPortOutput(ddr_g, DIR1);
   setPortOutput(ddr_e, DIR2);
-  pinMode(3, INPUT);
   setPortOutput(ddr_l, 2);
   setPortOutput(ddr_l, 0);
   setPortOutput(ddr_b, 2);
@@ -120,24 +119,20 @@ States states = IDLE;
 void loop()
 {
   setFanMotor(true);
-  Serial.print(states);
-  Serial.print("\n");
+
   int chk1 = DHT.read11(DHT11_PIN);
   DateTime now = rtc.now();
 
   adc_init();
   if (*pin_b & 0b01111111){
     states = DISABLED;
-    Serial.print("HELLO \n");
+
   }
   if (states != DISABLED)
   {
     int waterLevel = getWaterLevel();
-    // Serial.print(waterLevel);
-    // Serial.print("\n");
-    // Serial.print(DHT.temperature);
-    // Serial.print("\n");
-    if (false)
+
+    if (waterLevel <= WATER_THRESHOLD)
     {
       states = ERROR;
     }
