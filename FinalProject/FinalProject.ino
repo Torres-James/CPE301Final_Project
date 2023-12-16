@@ -12,10 +12,7 @@ const byte interruptPin = 2;
 #define TBE 0x20
 // stepper motor
 const int stepsPerRevolution = 2038;
-#define stepperPin1 8
-#define stepperPin2 10
-#define stepperPin3 9
-#define stepperPin4 11
+
 Stepper myStepper = Stepper(stepsPerRevolution, 8, 10, 9, 11);
 // fan motor
 #define SPEED_PIN 3 // pin 6 ph3
