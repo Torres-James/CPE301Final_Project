@@ -27,16 +27,13 @@ dht DHT;
 #define WATER_THRESHOLD 900
 #define DHT11_PIN 7
 // LED pins
-#define RED_LED 2    // pin 47 pl2
-#define YELLOW_LED 0 // pin 49 pl0
+#define BLUE_LED 2    // pin 47 pl2
+#define RED_LED 0 // pin 49 pl0
 #define GREEN_LED 2  // pin 51 pb2
-#define BLUE_LED 0   // pin 53 pb0
+#define YELLOW_LED 0   // pin 53 pb0
 enum LEDS
 {
-  RED,
-  YELLOW,
-  GREEN,
-  BLUE
+BLUE, RED, GREEN, YELLOW
 };
 #pragma region
 volatile unsigned char *port_g = (unsigned char *)0x34;
@@ -85,7 +82,7 @@ volatile unsigned char *myTIFR1 = (unsigned char *)0x36;
 const int RS = 31, EN = 33, D4 = 35, D5 = 37, D6 = 39, D7 = 41;
 LiquidCrystal lcd(RS, EN, D4, D5, D6, D7);
 
-// posible states
+// possible states
 enum States
 {
   START,
@@ -96,9 +93,13 @@ enum States
 };
 void setup()
 {
-  *ddr_k &= 0xEF; //pin A12 stop to input
-  *ddr_k &= 0xF7; //pin A11 reset to input
+  Serial.begin(9600);
+  *ddr_b &= 0b01111111; //pin 13 pb7 stop to input
+  *ddr_b &= 0b10111111; //pin 12 pb6 reset to input
   rtc.begin();
+
+  digitalWrite(25, HIGH);
+  digitalWrite(23, LOW);
   // RTC stuff
   U0init(9600);
   rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
@@ -107,7 +108,7 @@ void setup()
   setPortOutput(ddr_h, SPEED_PIN);
   setPortOutput(ddr_g, DIR1);
   setPortOutput(ddr_e, DIR2);
-
+  pinMode(3, INPUT);
   setPortOutput(ddr_l, 2);
   setPortOutput(ddr_l, 0);
   setPortOutput(ddr_b, 2);
@@ -118,17 +119,25 @@ void setup()
 States states = IDLE;
 void loop()
 {
+  setFanMotor(true);
+  Serial.print(states);
+  Serial.print("\n");
   int chk1 = DHT.read11(DHT11_PIN);
   DateTime now = rtc.now();
 
   adc_init();
-  if (*pin_k & 0xEF){
+  if (*pin_b & 0b01111111){
     states = DISABLED;
+    Serial.print("HELLO \n");
   }
   if (states != DISABLED)
   {
     int waterLevel = getWaterLevel();
-    if (waterLevel <= WATER_THRESHOLD)
+    // Serial.print(waterLevel);
+    // Serial.print("\n");
+    // Serial.print(DHT.temperature);
+    // Serial.print("\n");
+    if (false)
     {
       states = ERROR;
     }
@@ -153,7 +162,7 @@ void loop()
       break;
     case ERROR:
       ErrorState();
-      if(*pin_k & 0xF7){
+      if(*pin_k & 0x40){
         states = IDLE;
       }
       break;
@@ -163,13 +172,15 @@ void loop()
     default:
       break;
     }
+  }else{
+    DisabledState();
   }
 }
 void stateMachine()
 {
   if (states == DISABLED)
   {
-    states == START;
+    states = START;
   }
 }
 void updateLCD()
@@ -224,16 +235,16 @@ void turnOnLed(LEDS ledColor)
   switch (ledColor)
   {
   case 0:
-    WRITE_HIGH_P(port_l, RED_LED);
+    WRITE_HIGH_P(port_l, 2);
     break;
   case 1:
-    WRITE_HIGH_P(port_l, YELLOW_LED);
+    WRITE_HIGH_P(port_l, 0);
     break;
   case 2:
-    WRITE_HIGH_P(port_b, GREEN_LED);
+    WRITE_HIGH_P(port_b, 2);
     break;
   case 3:
-    WRITE_HIGH_P(port_b, BLUE_LED);
+    WRITE_HIGH_P(port_b, 0);
     break;
   default:
     break;
@@ -417,7 +428,7 @@ void ErrorState()
 // turn fan motor on or off
 void setFanMotor(bool on)
 {
-
+  WRITE_HIGH_P(port_h, SPEED_PIN);
   if (on)
   {
     *port_g |= (0x01 << DIR1);
